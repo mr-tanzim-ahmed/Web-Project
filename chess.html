@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chess Game</title>
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { padding: 20px; }
+    #board { 
+      display: grid;
+      grid-template: repeat(8, 60px) / repeat(8, 60px);
+      margin: 20px auto;
+      width: 480px;
+      border: 4px solid #333;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+    }
+    .square {
+      width: 60px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      user-select: none;
+      position: relative;
+    }
+    .light { background-color: #87CEEB; } /* sky color */
+    .dark { background-color: #556B2F; }
+    .piece { cursor: grab; }
+    .white-piece { color: #444; /* darker white pieces */ }
+    .inCheck { outline: 3px solid red !important; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="text-center">Chess Game</h1>
+    <!-- Player setup -->
+    <div id="setup" class="mb-4">
+      <div class="row g-2">
+        <div class="col">
+          <input id="player1" type="text" class="form-control" placeholder="Player 1 Name">
+        </div>
+        <div class="col">
+          <input id="player2" type="text" class="form-control" placeholder="Player 2 Name">
+        </div>
+        <div class="col">
+          <select id="colorChoice" class="form-select">
+            <option value="white">Player 1: White</option>
+            <option value="black">Player 1: Black</option>
+          </select>
+        </div>
+        <div class="col-auto">
+          <button id="startBtn" class="btn btn-primary">Start Game</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game status and reset -->
+    <div id="status" class="mb-2 text-danger fw-bold"></div>
+    <button id="resetBtn" class="btn btn-secondary mb-3">Reset</button>
+
+    <!-- Chess board -->
+    <div id="board"></div>
+  </div>
+
+  <script>
+    const initialBoard = [
+      ['r','n','b','q','k','b','n','r'],
+      ['p','p','p','p','p','p','p','p'],
+      ['','','','','','','',''],
+      ['','','','','','','',''],
+      ['','','','','','','',''],
+      ['','','','','','','',''],
+      ['P','P','P','P','P','P','P','P'],
+      ['R','N','B','Q','K','B','N','R'],
+    ];
+    let boardState, currentPlayer, players = {};
+
+    function createBoard() {
+      const board = document.getElementById('board');
+      board.innerHTML = '';
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          const sq = document.createElement('div');
+          sq.classList.add('square', ((r + c) % 2 ? 'dark' : 'light'));
+          sq.dataset.pos = `${r}-${c}`;
+          sq.addEventListener('dragover', e => e.preventDefault());
+          sq.addEventListener('drop', onDrop);
+          board.appendChild(sq);
+        }
+      }
+    }
+
+    function renderPieces() {
+      clearCheckHighlights();
+      boardState.forEach((row, r) => row.forEach((p, c) => {
+        const sq = document.querySelector(`.square[data-pos='${r}-${c}']`);
+        sq.innerHTML = '';
+        if (p) {
+          const piece = document.createElement('span');
+          piece.textContent = getUnicode(p);
+          piece.draggable = true;
+          piece.classList.add('piece');
+          if (/[A-Z]/.test(p)) piece.classList.add('white-piece');
+          piece.dataset.from = `${r}-${c}`;
+          piece.dataset.p = p;
+          piece.addEventListener('dragstart', onDragStart);
+          sq.appendChild(piece);
+        }
+      }));
+    }
+
+    function getUnicode(p) {
+      const map = {
+        'K': '\u2654','Q': '\u2655','R': '\u2656','B': '\u2657','N': '\u2658','P': '\u2659',
+        'k': '\u265A','q': '\u265B','r': '\u265C','b': '\u265D','n': '\u265E','p': '\u265F'
+      };
+      return map[p] || '';
+    }
+
+    function onDragStart(e) {
+      e.dataTransfer.setData('text/plain', JSON.stringify({ from: e.target.dataset.from, p: e.target.dataset.p }));
+    }
+
+    function onDrop(e) {
+      const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+      const to = e.currentTarget.dataset.pos;
+      if (handleMove(data.from, to, data.p)) {
+        switchPlayer();
+        checkThreat();
+      }
+    }
+
+    // Basic movement: pawn, knight, rook
+    function handleMove(from, to, p) {
+      const [r1,c1] = from.split('-').map(Number);
+      const [r2,c2] = to.split('-').map(Number);
+      const whiteTurn = currentPlayer === 'white';
+      if ((/[A-Z]/.test(p) && !whiteTurn) || (/[a-z]/.test(p) && whiteTurn)) return false;
+
+      if ((p==='P'||p==='p') && isValidPawnMove(r1,c1,r2,c2,p)) return move(from,to);
+      if ((p==='N'||p==='n') && isValidKnightMove(r1,c1,r2,c2)) return move(from,to);
+      if ((p==='R'||p==='r') && isValidRookMove(r1,c1,r2,c2)) return move(from,to);
+      return false;
+    }
+
+    // Pawn, Knight, Rook logic (unchanged)
+    function isValidPawnMove(r1,c1,r2,c2,p) {
+      const dir = p==='P' ? -1 : 1;
+      if (c1===c2 && !boardState[r2][c2]) {
+        if (r1+dir===r2) return true;
+        if (((p==='P'&&r1===6)||(p==='p'&&r1===1)) && r1+2*dir===r2 && !boardState[r1+dir][c1]) return true;
+      }
+      if (Math.abs(c1-c2)===1 && r1+dir===r2 && boardState[r2][c2]) return true;
+      return false;
+    }
+    function isValidKnightMove(r1,c1,r2,c2) { const dr=Math.abs(r1-r2), dc=Math.abs(c1-c2); return (dr===1&&dc===2)||(dr===2&&dc===1); }
+    function isValidRookMove(r1,c1,r2,c2) {
+      if (r1!==r2&&c1!==c2) return false;
+      const dr=Math.sign(r2-r1), dc=Math.sign(c2-c1);
+      let r=r1+dr,c=c1+dc;
+      while(r!==r2||c!==c2){ if(boardState[r][c]) return false; r+=dr; c+=dc; }
+      return true;
+    }
+
+    function move(from, to) {
+      const [r1,c1]=from.split('-').map(Number);
+      const [r2,c2]=to.split('-').map(Number);
+      boardState[r2][c2]=boardState[r1][c1]; boardState[r1][c1]='';
+      renderPieces();
+      return true;
+    }
+
+    function switchPlayer() {
+      currentPlayer = currentPlayer==='white'?'black':'white';
+      document.getElementById('status').textContent = `Turn: ${currentPlayer}`;
+    }
+
+    function checkThreat() {
+      clearCheckHighlights();
+      const enemy = currentPlayer==='white'?'black':'white';
+      const kingSym = enemy==='white'?'K':'k';
+      let kr,kc;
+      boardState.forEach((row,r)=>row.forEach((p,c)=>{ if(p===kingSym){kr=r;kc=c;} }));
+      const threats = [];
+      boardState.forEach((row,r)=>row.forEach((p,c)=>{
+        if(p && ((/[A-Z]/.test(p) && currentPlayer==='white')||(/[a-z]/.test(p)&&currentPlayer==='black'))) {
+          if ((p.toLowerCase()==='r'&&isValidRookMove(r,c,kr,kc)) ||
+              (p.toLowerCase()==='n'&&isValidKnightMove(r,c,kr,kc)) ||
+              (p.toLowerCase()==='p'&&isValidPawnMove(r,c,kr,kc,p))) {
+            threats.push({r,c,p});
+          }
+        }
+      }));
+      if(threats.length) {
+        document.getElementById('status').textContent = 'Check! Move your king!';
+        threats.forEach(t=>{
+          highlightPath(t.r,t.c,kr,kc);
+        });
+      }
+    }
+
+    function highlightPath(r1,c1,r2,c2) {
+      const dr = Math.sign(r2-r1), dc=Math.sign(c2-c1);
+      let r=r1, c=c1;
+      while(true) {
+        const sq = document.querySelector(`.square[data-pos='${r}-${c}']`);
+        sq.classList.add('inCheck');
+        if(r===r2&&c===c2) break;
+        r+=dr; c+=dc;
+      }
+    }
+
+    function clearCheckHighlights() {
+      document.querySelectorAll('.inCheck').forEach(s=>s.classList.remove('inCheck'));
+    }
+
+    function resetGame() {
+      boardState = JSON.parse(JSON.stringify(initialBoard));
+      renderPieces();
+      currentPlayer = 'white';
+      document.getElementById('status').textContent = '';
+    }
+
+    document.getElementById('startBtn').addEventListener('click', ()=>{
+      players.player1 = document.getElementById('player1').value.trim()||'Player 1';
+      players.player2 = document.getElementById('player2').value.trim()||'Player 2';
+      const choice = document.getElementById('colorChoice').value;
+      players.player1Color = choice;
+      players.player2Color = choice==='white'?'black':'white';
+      document.getElementById('setup').style.display='none';
+      resetGame();
+    });
+    document.getElementById('resetBtn').addEventListener('click', ()=>location.reload());
+
+    // initial UI
+    createBoard();
+  </script>
+</body>
+</html>
