@@ -30,7 +30,9 @@
     .dark { background-color: #556B2F; }
     .piece { cursor: grab; }
     .white-piece { color: #444; /* darker white pieces */ }
-    .inCheck { outline: 3px solid red !important; }
+    .inCheck {
+        background-color: rgba(255, 0, 0, 0.4) !important;
+    }
   </style>
 </head>
 <body>
@@ -38,28 +40,31 @@
     <h1 class="text-center">Chess Game</h1>
     <!-- Player setup -->
     <div id="setup" class="mb-4">
-      <div class="row g-2">
-        <div class="col">
+      <div class="row g-3 align-items-end">
+        <div class="col-md">
+          <label for="player1" class="form-label">Player 1 Name</label>
           <input id="player1" type="text" class="form-control" placeholder="Player 1 Name">
         </div>
-        <div class="col">
+        <div class="col-md">
+           <label for="player2" class="form-label">Player 2 Name</label>
           <input id="player2" type="text" class="form-control" placeholder="Player 2 Name">
         </div>
-        <div class="col">
+        <div class="col-md-3">
+           <label for="colorChoice" class="form-label">Player 1's Color</label>
           <select id="colorChoice" class="form-select">
             <option value="white">Player 1: White</option>
             <option value="black">Player 1: Black</option>
           </select>
         </div>
-        <div class="col-auto">
-          <button id="startBtn" class="btn btn-primary">Start Game</button>
+        <div class="col-md-2">
+          <button id="startBtn" class="btn btn-primary w-100">Start</button>
         </div>
       </div>
     </div>
 
     <!-- Game status and reset -->
-    <div id="status" class="mb-2 text-danger fw-bold"></div>
-    <button id="resetBtn" class="btn btn-secondary mb-3">Reset</button>
+    <div id="status" class="mb-2 text-danger fw-bold h4"></div>
+    <button id="resetBtn" class="btn btn-secondary btn-lg mb-3">Reset Game</button>
 
     <!-- Chess board -->
     <div id="board"></div>
@@ -133,36 +138,63 @@
       }
     }
 
-    // Basic movement: pawn, knight, rook
     function handleMove(from, to, p) {
       const [r1,c1] = from.split('-').map(Number);
       const [r2,c2] = to.split('-').map(Number);
       const whiteTurn = currentPlayer === 'white';
+      // Check if it's the correct player's turn
       if ((/[A-Z]/.test(p) && !whiteTurn) || (/[a-z]/.test(p) && whiteTurn)) return false;
 
-      if ((p==='P'||p==='p') && isValidPawnMove(r1,c1,r2,c2,p)) return move(from,to);
-      if ((p==='N'||p==='n') && isValidKnightMove(r1,c1,r2,c2)) return move(from,to);
-      if ((p==='R'||p==='r') && isValidRookMove(r1,c1,r2,c2)) return move(from,to);
+      const pieceType = p.toLowerCase();
+      let isValid = false;
+      switch (pieceType) {
+        case 'p': isValid = isValidPawnMove(r1, c1, r2, c2, p); break;
+        case 'n': isValid = isValidKnightMove(r1, c1, r2, c2); break;
+        case 'r': isValid = isValidRookMove(r1, c1, r2, c2); break;
+        case 'b': isValid = isValidBishopMove(r1, c1, r2, c2); break;
+        case 'q': isValid = isValidQueenMove(r1, c1, r2, c2); break;
+        // King movement not yet implemented
+      }
+      if (isValid) return move(from, to);
       return false;
     }
 
-    // Pawn, Knight, Rook logic (unchanged)
+    // --- Piece Movement Logic ---
     function isValidPawnMove(r1,c1,r2,c2,p) {
       const dir = p==='P' ? -1 : 1;
-      if (c1===c2 && !boardState[r2][c2]) {
-        if (r1+dir===r2) return true;
-        if (((p==='P'&&r1===6)||(p==='p'&&r1===1)) && r1+2*dir===r2 && !boardState[r1+dir][c1]) return true;
-      }
+      // Standard 1-step move
+      if (c1===c2 && !boardState[r2][c2] && r1+dir===r2) return true;
+      // Initial 2-step move
+      const isStartingRank = (p === 'P' && r1 === 6) || (p === 'p' && r1 === 1);
+      if (c1===c2 && !boardState[r2][c2] && isStartingRank && r1+2*dir===r2 && !boardState[r1+dir][c1]) return true;
+      // Capture
       if (Math.abs(c1-c2)===1 && r1+dir===r2 && boardState[r2][c2]) return true;
       return false;
     }
-    function isValidKnightMove(r1,c1,r2,c2) { const dr=Math.abs(r1-r2), dc=Math.abs(c1-c2); return (dr===1&&dc===2)||(dr===2&&dc===1); }
+
+    function isValidKnightMove(r1,c1,r2,c2) {
+        const dr=Math.abs(r1-r2), dc=Math.abs(c1-c2);
+        return (dr===1&&dc===2)||(dr===2&&dc===1);
+    }
+
     function isValidRookMove(r1,c1,r2,c2) {
-      if (r1!==r2&&c1!==c2) return false;
+      if (r1!==r2 && c1!==c2) return false; // Must be same row or column
       const dr=Math.sign(r2-r1), dc=Math.sign(c2-c1);
       let r=r1+dr,c=c1+dc;
-      while(r!==r2||c!==c2){ if(boardState[r][c]) return false; r+=dr; c+=dc; }
+      while(r!==r2 || c!==c2){ if(boardState[r][c]) return false; r+=dr; c+=dc; }
       return true;
+    }
+
+    function isValidBishopMove(r1,c1,r2,c2) {
+      if (Math.abs(r1-r2) !== Math.abs(c1-c2)) return false; // Must be diagonal
+      const dr=Math.sign(r2-r1), dc=Math.sign(c2-c1);
+      let r=r1+dr, c=c1+dc;
+      while(r!==r2 || c!==c2){ if(boardState[r][c]) return false; r+=dr; c+=dc; }
+      return true;
+    }
+
+    function isValidQueenMove(r1, c1, r2, c2) {
+        return isValidRookMove(r1, c1, r2, c2) || isValidBishopMove(r1, c1, r2, c2);
     }
 
     function move(from, to) {
@@ -175,30 +207,51 @@
 
     function switchPlayer() {
       currentPlayer = currentPlayer==='white'?'black':'white';
-      document.getElementById('status').textContent = `Turn: ${currentPlayer}`;
+      const pName = currentPlayer === players.player1Color ? players.player1 : players.player2;
+      document.getElementById('status').textContent = `${pName}'s Turn (${currentPlayer})`;
     }
 
     function checkThreat() {
       clearCheckHighlights();
-      const enemy = currentPlayer==='white'?'black':'white';
-      const kingSym = enemy==='white'?'K':'k';
-      let kr,kc;
-      boardState.forEach((row,r)=>row.forEach((p,c)=>{ if(p===kingSym){kr=r;kc=c;} }));
+      const enemyPlayer = currentPlayer === 'white' ? 'black' : 'white';
+      const kingSym = enemyPlayer === 'white' ? 'K' : 'k';
+      let kr, kc;
+      boardState.forEach((row, r) => row.forEach((p, c) => { if (p === kingSym) { kr = r; kc = c; }}));
+      if (kr === undefined) return; // No king found
+
       const threats = [];
       boardState.forEach((row,r)=>row.forEach((p,c)=>{
-        if(p && ((/[A-Z]/.test(p) && currentPlayer==='white')||(/[a-z]/.test(p)&&currentPlayer==='black'))) {
-          if ((p.toLowerCase()==='r'&&isValidRookMove(r,c,kr,kc)) ||
-              (p.toLowerCase()==='n'&&isValidKnightMove(r,c,kr,kc)) ||
-              (p.toLowerCase()==='p'&&isValidPawnMove(r,c,kr,kc,p))) {
-            threats.push({r,c,p});
+        // Is it a piece of the current player?
+        const isCurrentPlayerPiece = (/[A-Z]/.test(p) && currentPlayer==='white') || (/[a-z]/.test(p) && currentPlayer==='black');
+        if(p && isCurrentPlayerPiece) {
+          const pieceType = p.toLowerCase();
+          let isValidThreat = false;
+          switch (pieceType) {
+            case 'p': isValidThreat = isValidPawnMove(r, c, kr, kc, p); break;
+            case 'n': isValidThreat = isValidKnightMove(r, c, kr, kc); break;
+            case 'r': isValidThreat = isValidRookMove(r, c, kr, kc); break;
+            case 'b': isValidThreat = isValidBishopMove(r, c, kr, kc); break;
+            case 'q': isValidThreat = isValidQueenMove(r, c, kr, kc); break;
+          }
+          if (isValidThreat) {
+            threats.push({r,c,p, type: pieceType});
           }
         }
       }));
+
       if(threats.length) {
-        document.getElementById('status').textContent = 'Check! Move your king!';
-        threats.forEach(t=>{
-          highlightPath(t.r,t.c,kr,kc);
+        document.getElementById('status').textContent = `Check! ${enemyPlayer} king is threatened!`;
+        threats.forEach(t => {
+            if (t.type === 'r' || t.type === 'b' || t.type === 'q') {
+                highlightPath(t.r, t.c, kr, kc);
+            } else { // For Knights and Pawns
+                const threatSquare = document.querySelector(`.square[data-pos='${t.r}-${t.c}']`);
+                if (threatSquare) threatSquare.classList.add('inCheck');
+            }
         });
+        // Always highlight the king's square as well
+        const kingSquare = document.querySelector(`.square[data-pos='${kr}-${kc}']`);
+        if (kingSquare) kingSquare.classList.add('inCheck');
       }
     }
 
@@ -207,8 +260,8 @@
       let r=r1, c=c1;
       while(true) {
         const sq = document.querySelector(`.square[data-pos='${r}-${c}']`);
-        sq.classList.add('inCheck');
-        if(r===r2&&c===c2) break;
+        if (sq) sq.classList.add('inCheck');
+        if(r===r2 && c===c2) break;
         r+=dr; c+=dc;
       }
     }
@@ -221,9 +274,11 @@
       boardState = JSON.parse(JSON.stringify(initialBoard));
       renderPieces();
       currentPlayer = 'white';
-      document.getElementById('status').textContent = '';
+      const pName = players.player1Color === 'white' ? players.player1 : players.player2;
+      document.getElementById('status').textContent = `${pName}'s Turn (white)`;
     }
 
+    // --- Event Listeners ---
     document.getElementById('startBtn').addEventListener('click', ()=>{
       players.player1 = document.getElementById('player1').value.trim()||'Player 1';
       players.player2 = document.getElementById('player2').value.trim()||'Player 2';
@@ -239,4 +294,4 @@
     createBoard();
   </script>
 </body>
-</html>
+</html>```
