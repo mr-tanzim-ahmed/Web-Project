@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Automated Bangla OCR Engine</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.1.1/dist/tesseract.min.js"></script>
+    <style>
+        :root {
+            --primary: #3b82f6; --primary-hover: #2563eb;
+            --secondary: #1e293b; --success: #10b981; --success-hover: #059669;
+            --warning: #f59e0b; --warning-hover: #d97706;
+            --danger: #ef4444; --danger-hover: #dc2626;
+            --purple: #8b5cf6; --purple-hover: #7c3aed;
+            --gray-50: #f9fafb; --gray-100: #f3f4f6; --gray-200: #e5e7eb;
+            --gray-600: #4b5563; --gray-700: #374151; --white: #ffffff;
+            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--gray-50); color: var(--gray-700); line-height: 1.6;
+        }
+        .container { max-width: 1400px; margin: 0 auto; padding: 1rem; }
+        .header { text-align: center; margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 2px solid var(--primary); }
+        .header h1 { font-size: 2.5rem; color: var(--secondary); margin-bottom: 0.5rem; }
+        .header p { color: var(--gray-600); font-size: 1.1rem; }
+        
+        .grid { display: grid; gap: 1.5rem; }
+        @media (min-width: 1024px) { .grid { grid-template-columns: 400px 1fr; } }
+        
+        .card { background: var(--white); border-radius: 12px; padding: 1.5rem; box-shadow: var(--shadow); border: 1px solid var(--gray-200); }
+        
+        .file-section { display: flex; flex-direction: column; gap: 1rem; }
+        .file-input-wrapper { position: relative; }
+        .file-input { position: absolute; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+        .file-label {
+            display: block; background: var(--primary); color: var(--white); padding: 0.75rem 1.5rem; border-radius: 8px; text-align: center;
+            font-weight: 500; cursor: pointer; transition: all 0.2s;
+        }
+        .file-label:hover { background: var(--primary-hover); }
+        .file-name { text-align: center; color: var(--gray-600); font-style: italic; word-break: break-word; min-height: 1.2rem; }
+        
+        .controls { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
+        .btn { padding: 0.75rem 1rem; border: none; border-radius: 6px; font-weight: 500; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .btn-success { background: var(--success); color: var(--white); }
+        .btn-success:hover:not(:disabled) { background: var(--success-hover); }
+        .btn-warning { background: var(--warning); color: var(--white); }
+        .btn-warning:hover:not(:disabled) { background: var(--warning-hover); }
+        .btn-danger { background: var(--danger); color: var(--white); }
+        .btn-danger:hover:not(:disabled) { background: var(--danger-hover); }
+        .btn-purple { background: var(--purple); color: var(--white); }
+        .btn-purple:hover:not(:disabled) { background: var(--purple-hover); }
+        
+        .status { text-align: center; font-weight: 500; padding: 1rem 0; min-height: 2rem; }
+        
+        .progress-container { background: var(--gray-200); border-radius: 6px; overflow: hidden; height: 28px; display: none; }
+        .progress-bar {
+            height: 100%; background: var(--success); display: flex; align-items: center; justify-content: center; color: var(--white);
+            font-size: 0.8rem; font-weight: 500; transition: width 0.3s ease, background-color 0.3s ease; width: 0%;
+        }
+        .progress-bar.paused { background: var(--warning); }
+        
+        .output-section { display: flex; flex-direction: column; gap: 1rem; }
+        @media (min-width: 1024px) { .output-section { height: calc(100vh - 200px); } }
+        
+        .output-textarea {
+            flex: 1; min-height: 500px; padding: 1rem; border: 2px solid var(--gray-200); border-radius: 8px; font-size: 1.1rem; line-height: 1.8; resize: vertical;
+            background: var(--white); font-family: 'SolaimanLipi', 'Siyam Rupali', 'Kalpurush', monospace;
+        }
+        .output-textarea:focus { outline: none; border-color: var(--primary); }
+
+        .footer {
+            text-align: center;
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--gray-200);
+            font-size: 0.9rem;
+            color: var(--gray-600);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>বাংলা OCR ইঞ্জিন</h1>
+            <p>Automated Engine for Correct Word Spacing & Readability</p>
+        </header>
+        <div class="grid">
+            <aside>
+                <div class="card file-section">
+                    <div class="file-input-wrapper">
+                        <input type="file" id="fileInput" class="file-input" accept=".pdf">
+                        <label for="fileInput" class="file-label">📁 Select PDF File</label>
+                    </div>
+                    <div id="fileName" class="file-name">No file selected</div>
+                </div>
+                <div class="card" style="margin-top: 1.5rem;">
+                    <div class="controls">
+                        <button id="startBtn" class="btn btn-success" disabled>▶ Start</button>
+                        <button id="pauseBtn" class="btn btn-warning" disabled>⏸ Pause</button>
+                        <button id="stopBtn" class="btn btn-danger" disabled>⏹ Stop</button>
+                    </div>
+                    <div id="status" class="status">Select a PDF file to begin</div>
+                    <div id="progressContainer" class="progress-container"><div id="progressBar" class="progress-bar">0%</div></div>
+                </div>
+            </aside>
+            <main class="card output-section">
+                <textarea id="outputText" class="output-textarea" placeholder="✨ Extracted & correctly spaced Bangla text will appear here..."></textarea>
+                <button id="downloadBtn" class="btn btn-purple" disabled>💾 Download Text File</button>
+            </main>
+        </div>
+         <footer class="footer">
+            &copy; <span id="currentYear"></span> Tanzim Ahmed. All rights reserved.
+        </footer>
+    </div>
+
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        
+        class OCRApp {
+            constructor() {
+                this.state = this.getInitialState();
+                this.initializeElements();
+                this.bindEvents();
+                this.updateUI();
+                this.setDynamicFooterYear();
+            }
+            
+            getInitialState() { return { worker: null, pdfDoc: null, isPaused: false, shouldStop: false, currentPage: 0, totalPages: 0, results: [], isProcessing: false }; }
+            initializeElements() { this.ui = { fileInput: document.getElementById('fileInput'), fileName: document.getElementById('fileName'), startBtn: document.getElementById('startBtn'), pauseBtn: document.getElementById('pauseBtn'), stopBtn: document.getElementById('stopBtn'), downloadBtn: document.getElementById('downloadBtn'), outputText: document.getElementById('outputText'), status: document.getElementById('status'), progressContainer: document.getElementById('progressContainer'), progressBar: document.getElementById('progressBar'), currentYear: document.getElementById('currentYear') }; }
+            
+            bindEvents() {
+                this.ui.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
+                this.ui.startBtn.addEventListener('click', () => this.startOrResume());
+                this.ui.pauseBtn.addEventListener('click', () => this.pause());
+                this.ui.stopBtn.addEventListener('click', () => this.stop());
+                this.ui.downloadBtn.addEventListener('click', () => this.downloadText());
+            }
+
+            setDynamicFooterYear() {
+                if(this.ui.currentYear) {
+                    this.ui.currentYear.textContent = new Date().getFullYear();
+                }
+            }
+
+            async handleFileSelect(event) {
+                const file = event.target.files[0]; if (!file) return;
+                await this.stop(true); this.state = this.getInitialState();
+                this.ui.fileName.textContent = file.name; this.ui.status.textContent = '📖 Loading PDF... Please wait.'; this.updateUI();
+                try {
+                    const fileData = new Uint8Array(await file.arrayBuffer()); this.state.pdfDoc = await pdfjsLib.getDocument(fileData).promise;
+                    this.state.totalPages = this.state.pdfDoc.numPages; this.state.results = new Array(this.state.totalPages).fill(null);
+                    this.ui.status.textContent = `✅ Ready! PDF has ${this.state.totalPages} pages.`; this.updateUI();
+                } catch (error) { this.ui.status.textContent = `❌ Error: ${error.message}`; this.updateUI(); }
+            }
+            
+            async startOrResume() {
+                if (this.ui.startBtn.textContent.includes('Start')) { this.state.currentPage = 0; this.ui.outputText.value = ''; this.state.results.fill(null); }
+                this.state.isPaused = false; this.state.isProcessing = true;
+                this.runOCR();
+            }
+            
+            pause() { this.state.isPaused = true; this.state.isProcessing = false; this.updateUI(); }
+            async stop(isSilent = false) {
+                this.state.shouldStop = true; this.state.isProcessing = false;
+                if (this.state.worker) { await this.state.worker.terminate(); this.state.worker = null; }
+                this.state = this.getInitialState();
+                if (!isSilent) this.ui.status.textContent = "🛑 Process stopped by user."; this.updateUI();
+            }
+            
+            async runOCR() {
+                try {
+                    await this.initializeWorker(); this.updateUI();
+                    for (let i = this.state.currentPage; i < this.state.totalPages; i++) {
+                        if (this.state.shouldStop || this.state.isPaused) { if (this.state.isPaused) this.state.currentPage = i; break; }
+                        await this.processPage(i);
+                    }
+                    if (this.state.currentPage === this.state.totalPages && !this.state.shouldStop) {
+                         this.state.isProcessing = false;
+                         this.ui.status.textContent = `🎉 Complete! ${this.state.totalPages} pages processed.`;
+                         await this.state.worker.terminate(); this.state.worker = null; this.updateUI();
+                    }
+                } catch (error) {
+                    this.ui.status.textContent = `❌ OCR Error: ${error.message}`; this.state.isProcessing = false; this.updateUI();
+                }
+            }
+
+            async initializeWorker() {
+                if (this.state.worker) return; this.ui.status.textContent = `🚀 Initializing AI OCR Model...`;
+                const worker = await Tesseract.createWorker();
+                await worker.loadLanguage('ben'); await worker.initialize('ben');
+                await worker.setParameters({
+                    tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT,
+                });
+                this.state.worker = worker;
+            }
+            
+            async processPage(pageIndex) {
+                this.state.currentPage = pageIndex; this.updateUI();
+                try {
+                    const canvas = await this.renderAndProcessCanvas(pageIndex + 1);
+                    const { data } = await this.state.worker.recognize(canvas);
+                    const cleanedText = this.postProcessText(data);
+                    this.state.results[pageIndex] = cleanedText;
+                    this.updateOutput();
+                } catch (error) { this.state.results[pageIndex] = `[Error processing page ${pageIndex + 1}]`; }
+            }
+
+            async renderAndProcessCanvas(pageNum) {
+                const page = await this.state.pdfDoc.getPage(pageNum);
+                const viewport = page.getViewport({ scale: 3.0 }); 
+                const canvas = document.createElement('canvas'); const context = canvas.getContext('2d', { willReadFrequently: true });
+                canvas.height = viewport.height; canvas.width = viewport.width;
+                await page.render({ canvasContext: context, viewport: viewport }).promise;
+                this.applyAdvancedImageProcessing(context);
+                return canvas;
+            }
+            
+            applyAdvancedImageProcessing(context) {
+                const canvas=context.canvas, width=canvas.width, height=canvas.height;
+                let imageData=context.getImageData(0, 0, width, height);
+                for (let i=0; i<imageData.data.length; i+=4) { const lum=0.299*imageData.data[i] + 0.587*imageData.data[i+1] + 0.114*imageData.data[i+2]; imageData.data[i] = imageData.data[i+1] = imageData.data[i+2] = lum; }
+                const integralImage=new Float32Array(width*height);
+                for (let y=0; y<height; y++){ let rowSum=0; for (let x=0; x<width; x++) { const index=y*width+x; rowSum+=imageData.data[index*4]; integralImage[index]=rowSum+(y>0?integralImage[index-width]:0); } }
+                const s=Math.round(width/16), t=15;
+                for (let y=0; y<height; y++) { for(let x=0; x<width; x++) { const index=y*width+x; const x1=Math.max(0,x-s), y1=Math.max(0,y-s), x2=Math.min(width-1,x+s), y2=Math.min(height-1,y+s); const count=(x2-x1)*(y2-y1); const sum=integralImage[y2*width+x2] - (x1>0?integralImage[y2*width+x1-1]:0) - (y1>0?integralImage[(y1-1)*width+x2]:0) + (x1>0&&y1>0?integralImage[(y1-1)*width+x1-1]:0); const finalColor=imageData.data[index*4]<(sum/count)*(1-t/100)?0:255; imageData.data[index*4]=imageData.data[index*4+1]=imageData.data[index*4+2]=finalColor;}}
+                context.putImageData(imageData,0,0);
+            }
+            
+            postProcessText(data) {
+                if (!data || !data.text) return ""; let resultText = "";
+                for (const para of data.paragraphs) {
+                    for (const line of para.lines) {
+                        resultText += line.words.map(w => w.text).join(' ') + '\n';
+                    }
+                    resultText += '\n';
+                }
+                resultText = resultText.replace(/\s+([।?!,])/g, '$1'); resultText = resultText.replace(/([।?!,])([^\s\n])/g, '$1 $2');
+                return resultText.trim();
+            }
+            
+            updateOutput() {
+                let output = ''; this.state.results.forEach((text, index) => { if(text) output += `━━━ পৃষ্ঠা ${index + 1} ━━━\n${text.trim()}\n\n`; });
+                this.ui.outputText.value = output; this.ui.outputText.scrollTop = this.ui.outputText.scrollHeight;
+            }
+
+            updateUI() {
+                const hasFile=!!this.state.pdfDoc, isProcessing=this.state.isProcessing, isPaused=this.state.isPaused, isComplete=(this.state.currentPage === this.state.totalPages)&&this.state.totalPages>0;
+                this.ui.startBtn.textContent = isPaused ? '▶ Resume' : '▶ Start'; this.ui.startBtn.disabled = !hasFile || isProcessing;
+                this.ui.pauseBtn.disabled = !isProcessing || isPaused; this.ui.stopBtn.disabled = !isProcessing && !isPaused && !isComplete;
+                this.ui.downloadBtn.disabled = !this.ui.outputText.value.trim();
+                this.ui.progressContainer.style.display = (isProcessing || isPaused || isComplete || this.state.currentPage > 0) ? 'block' : 'none';
+                if(hasFile) {
+                    const progress = this.state.totalPages > 0 ? (this.state.currentPage/this.state.totalPages)*100 : 0;
+                    this.ui.progressBar.style.width=`${progress}%`; this.ui.progressBar.textContent=`${Math.round(progress)}%`;
+                    this.ui.progressBar.classList.toggle('paused', isPaused);
+                }
+                if(isProcessing) this.ui.status.textContent=`🔄 Processing page ${this.state.currentPage + 1} of ${this.state.totalPages}...`;
+                if(isPaused) this.ui.status.textContent = `⏸ Paused at page ${this.state.currentPage + 1}.`;
+            }
+            
+            downloadText() {
+                const text=this.ui.outputText.value.trim(); if (!text) return;
+                const blob=new Blob([text],{type:'text/plain;charset=utf-8'}); const link=document.createElement('a'); link.href=URL.createObjectURL(blob);
+                const fileName = this.ui.fileName.textContent.replace(/\.pdf$/i,'') || 'bangla_document';
+                link.download = `${fileName}_extracted.txt`; document.body.appendChild(link); link.click(); document.body.removeChild(link);
+            }
+        }
+        document.addEventListener('DOMContentLoaded', () => { new OCRApp() });
+    </script>
+</body>
+</html>
