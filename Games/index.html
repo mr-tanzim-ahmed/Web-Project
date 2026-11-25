@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Play Tic-Tac-Toe, Memory Match, or Number Guess in your browser.">
+  <title>Mini Games</title>
+  <style>
+    :root {
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #182238;
+      background: #f3f6fb;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+      --accent: #4968e8;
+      --muted: #64718a;
+      --border: #e0e6f0;
+    }
+
+    * { box-sizing: border-box; }
+    body { min-height: 100vh; margin: 0; }
+    button, input { font: inherit; }
+
+    main { width: min(760px, calc(100% - 2rem)); margin: 0 auto; padding: 2rem 0 4rem; }
+    .topbar { display: flex; align-items: center; gap: 1rem; margin-bottom: 2rem; }
+    .back-link { color: #3a4b70; text-decoration: none; font-weight: 650; }
+    .back-link:hover { text-decoration: underline; text-underline-offset: 4px; }
+    h1 { margin: 0; font-size: clamp(1.7rem, 5vw, 2.4rem); letter-spacing: -.04em; }
+
+    .game-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem;
+      padding: .45rem;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: #e9edf5;
+    }
+
+    .game-tab {
+      flex: 1 1 130px;
+      padding: .75rem 1rem;
+      border: 0;
+      border-radius: 10px;
+      background: transparent;
+      color: #53617a;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .game-tab[aria-selected="true"] { background: #fff; color: #25365a; box-shadow: 0 2px 8px #15233a14; }
+    button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid #8da7ff; outline-offset: 3px; }
+
+    .game-panel {
+      margin-top: 1.25rem;
+      padding: clamp(1.25rem, 5vw, 2rem);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: #fff;
+      box-shadow: 0 12px 32px #1e2d4d0b;
+    }
+
+    .game-panel[hidden] { display: none; }
+    .game-panel h2 { margin: 0; font-size: 1.45rem; }
+    .game-description { margin: .45rem 0 1.5rem; color: var(--muted); line-height: 1.55; }
+    .game-status { min-height: 1.6em; margin: 1rem 0; color: #33456c; font-weight: 700; text-align: center; }
+
+    .action-button {
+      display: inline-flex;
+      min-height: 44px;
+      align-items: center;
+      justify-content: center;
+      padding: .7rem 1.1rem;
+      border: 0;
+      border-radius: 10px;
+      background: var(--accent);
+      color: white;
+      cursor: pointer;
+      font-weight: 750;
+    }
+
+    .action-button:hover:not(:disabled) { background: #354fd1; }
+    .action-button:disabled { cursor: not-allowed; opacity: .55; }
+    .centered { text-align: center; }
+
+    .tic-grid {
+      display: grid;
+      width: min(100%, 360px);
+      grid-template-columns: repeat(3, 1fr);
+      gap: .6rem;
+      margin: 0 auto;
+    }
+
+    .tic-cell {
+      aspect-ratio: 1;
+      border: 1px solid #dce3f0;
+      border-radius: 14px;
+      background: #f7f9fd;
+      color: #354fd1;
+      cursor: pointer;
+      font-size: clamp(2.5rem, 12vw, 4.5rem);
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .tic-cell:hover:empty { background: #eef2ff; }
+    .tic-cell.winner { border-color: #7bc9a2; background: #e8f8ef; color: #16834f; }
+
+    .memory-grid {
+      display: grid;
+      width: min(100%, 440px);
+      grid-template-columns: repeat(4, 1fr);
+      gap: .65rem;
+      margin: 0 auto;
+    }
+
+    .memory-card {
+      aspect-ratio: 1;
+      border: 1px solid #dce3f0;
+      border-radius: 13px;
+      background: #eef2ff;
+      color: #354fd1;
+      cursor: pointer;
+      font-size: clamp(1.5rem, 8vw, 2.6rem);
+      font-weight: 800;
+    }
+
+    .memory-card.revealed, .memory-card.matched { background: #fff; }
+    .memory-card.matched { border-color: #7bc9a2; }
+
+    .guess-form { display: flex; max-width: 430px; gap: .65rem; margin: 0 auto; }
+    .guess-input {
+      width: 100%;
+      min-width: 0;
+      min-height: 44px;
+      padding: .65rem .8rem;
+      border: 1px solid #cfd8e8;
+      border-radius: 10px;
+      background: white;
+      color: inherit;
+    }
+
+    .guess-help { margin: .75rem auto 0; color: var(--muted); text-align: center; font-size: .9rem; }
+
+    @media (max-width: 420px) {
+      .guess-form { flex-direction: column; }
+      .memory-grid { gap: .4rem; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="topbar">
+      <a class="back-link" href="../index.html" aria-label="Back to projects">← Projects</a>
+      <h1>Mini Games</h1>
+    </header>
+
+    <nav class="game-tabs" role="tablist" aria-label="Choose a game">
+      <button id="tab-tic-tac-toe" class="game-tab" role="tab" aria-controls="tic-tac-toe" aria-selected="true">Tic-Tac-Toe</button>
+      <button id="tab-memory-match" class="game-tab" role="tab" aria-controls="memory-match" aria-selected="false" tabindex="-1">Memory Match</button>
+      <button id="tab-number-guess" class="game-tab" role="tab" aria-controls="number-guess" aria-selected="false" tabindex="-1">Number Guess</button>
+    </nav>
+
+    <section id="tic-tac-toe" class="game-panel" role="tabpanel" aria-labelledby="tab-tic-tac-toe">
+      <h2>Tic-Tac-Toe</h2>
+      <p class="game-description">Take turns placing X and O. Get three in a row to win.</p>
+      <div id="tic-status" class="game-status" role="status" aria-live="polite">X to move</div>
+      <div id="tic-grid" class="tic-grid" aria-label="Tic-Tac-Toe board">
+        <button class="tic-cell" type="button" data-cell="0" aria-label="Row 1, column 1, empty"></button>
+        <button class="tic-cell" type="button" data-cell="1" aria-label="Row 1, column 2, empty"></button>
+        <button class="tic-cell" type="button" data-cell="2" aria-label="Row 1, column 3, empty"></button>
+        <button class="tic-cell" type="button" data-cell="3" aria-label="Row 2, column 1, empty"></button>
+        <button class="tic-cell" type="button" data-cell="4" aria-label="Row 2, column 2, empty"></button>
+        <button class="tic-cell" type="button" data-cell="5" aria-label="Row 2, column 3, empty"></button>
+        <button class="tic-cell" type="button" data-cell="6" aria-label="Row 3, column 1, empty"></button>
+        <button class="tic-cell" type="button" data-cell="7" aria-label="Row 3, column 2, empty"></button>
+        <button class="tic-cell" type="button" data-cell="8" aria-label="Row 3, column 3, empty"></button>
+      </div>
+      <div class="centered"><button id="tic-reset" class="action-button" type="button" style="margin-top:1rem">New round</button></div>
+    </section>
+
+    <section id="memory-match" class="game-panel" role="tabpanel" aria-labelledby="tab-memory-match" hidden>
+      <h2>Memory Match</h2>
+      <p class="game-description">Find all six matching pairs using as few moves as you can.</p>
+      <div id="memory-status" class="game-status" role="status" aria-live="polite">Pairs: 0/6 · Moves: 0</div>
+      <div id="memory-grid" class="memory-grid" aria-label="Memory cards"></div>
+      <div class="centered"><button id="memory-reset" class="action-button" type="button" style="margin-top:1rem">Shuffle cards</button></div>
+    </section>
+
+    <section id="number-guess" class="game-panel" role="tabpanel" aria-labelledby="tab-number-guess" hidden>
+      <h2>Number Guess</h2>
+      <p class="game-description">Guess the hidden number from 1 to 100. The hints tell you which way to go.</p>
+      <div id="guess-status" class="game-status" role="status" aria-live="polite">Make your first guess.</div>
+      <form id="guess-form" class="guess-form">
+        <label class="sr-only" for="guess-input" style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0">Enter a number between 1 and 100</label>
+        <input id="guess-input" class="guess-input" type="number" min="1" max="100" step="1" inputmode="numeric" placeholder="1–100" required>
+        <button id="guess-submit" class="action-button" type="submit">Guess</button>
+      </form>
+      <p id="guess-count" class="guess-help">Attempts: 0</p>
+      <div class="centered"><button id="guess-reset" class="action-button" type="button" style="margin-top:1rem">New number</button></div>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      const tabButtons = [...document.querySelectorAll('[role="tab"]')];
+      const panels = [...document.querySelectorAll('[role="tabpanel"]')];
+
+      function showGame(gameId, updateLocation) {
+        const selectedTab = tabButtons.find(tab => tab.getAttribute('aria-controls') === gameId) || tabButtons[0];
+        tabButtons.forEach(tab => {
+          const selected = tab === selectedTab;
+          tab.setAttribute('aria-selected', String(selected));
+          tab.tabIndex = selected ? 0 : -1;
+        });
+        panels.forEach(panel => { panel.hidden = panel.id !== selectedTab.getAttribute('aria-controls'); });
+        if (updateLocation) history.replaceState(null, '', `#${selectedTab.getAttribute('aria-controls')}`);
+      }
+
+      tabButtons.forEach(tab => tab.addEventListener('click', () => showGame(tab.getAttribute('aria-controls'), true)));
+      window.addEventListener('hashchange', () => showGame(location.hash.slice(1), false));
+      showGame(location.hash.slice(1), false);
+
+      document.querySelector('.game-tabs').addEventListener('keydown', event => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        const currentIndex = tabButtons.indexOf(document.activeElement);
+        const nextIndex = event.key === 'Home' ? 0
+          : event.key === 'End' ? tabButtons.length - 1
+          : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + tabButtons.length) % tabButtons.length;
+        tabButtons[nextIndex].focus();
+        showGame(tabButtons[nextIndex].getAttribute('aria-controls'), true);
+      });
+
+      const ticCells = [...document.querySelectorAll('.tic-cell')];
+      const ticStatus = document.getElementById('tic-status');
+      const winningLines = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+      let ticBoard = Array(9).fill('');
+      let ticTurn = 'X';
+      let ticFinished = false;
+
+      function resetTicTacToe() {
+        ticBoard = Array(9).fill('');
+        ticTurn = 'X';
+        ticFinished = false;
+        ticStatus.textContent = 'X to move';
+        ticCells.forEach((cell, index) => {
+          cell.textContent = '';
+          cell.disabled = false;
+          cell.classList.remove('winner');
+          cell.setAttribute('aria-label', `Row ${Math.floor(index / 3) + 1}, column ${index % 3 + 1}, empty`);
+        });
+      }
+
+      ticCells.forEach((cell, index) => cell.addEventListener('click', () => {
+        if (ticFinished || ticBoard[index]) return;
+        ticBoard[index] = ticTurn;
+        cell.textContent = ticTurn;
+        cell.setAttribute('aria-label', `Row ${Math.floor(index / 3) + 1}, column ${index % 3 + 1}, ${ticTurn}`);
+        const winningLine = winningLines.find(line => line.every(position => ticBoard[position] === ticTurn));
+        if (winningLine) {
+          ticFinished = true;
+          ticStatus.textContent = `${ticTurn} wins!`;
+          winningLine.forEach(position => ticCells[position].classList.add('winner'));
+          ticCells.forEach(button => { button.disabled = true; });
+        } else if (ticBoard.every(Boolean)) {
+          ticFinished = true;
+          ticStatus.textContent = "It's a draw.";
+          ticCells.forEach(button => { button.disabled = true; });
+        } else {
+          ticTurn = ticTurn === 'X' ? 'O' : 'X';
+          ticStatus.textContent = `${ticTurn} to move`;
+        }
+      }));
+      document.getElementById('tic-reset').addEventListener('click', resetTicTacToe);
+
+      const memorySymbols = ['🍓', '🍋', '🍇', '🍉', '🥝', '🍒'];
+      const memoryGrid = document.getElementById('memory-grid');
+      const memoryStatus = document.getElementById('memory-status');
+      let memoryDeck = [];
+      let revealedCards = [];
+      let matchedCards = new Set();
+      let memoryMoves = 0;
+      let memoryLocked = false;
+      let mismatchTimer = null;
+
+      function renderMemoryCards() {
+        memoryGrid.replaceChildren();
+        memoryDeck.forEach((symbol, index) => {
+          const revealed = revealedCards.includes(index) || matchedCards.has(index);
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = `memory-card${revealedCards.includes(index) ? ' revealed' : ''}${matchedCards.has(index) ? ' matched' : ''}`;
+          button.textContent = revealed ? symbol : '?';
+          button.disabled = memoryLocked || matchedCards.has(index);
+          button.setAttribute('aria-label', `Card ${index + 1}, ${revealed ? symbol : 'hidden'}`);
+          button.addEventListener('click', () => revealMemoryCard(index));
+          memoryGrid.appendChild(button);
+        });
+        const pairs = matchedCards.size / 2;
+        memoryStatus.textContent = pairs === memorySymbols.length
+          ? `All pairs found in ${memoryMoves} moves!`
+          : `Pairs: ${pairs}/${memorySymbols.length} · Moves: ${memoryMoves}`;
+      }
+
+      function revealMemoryCard(index) {
+        if (memoryLocked || matchedCards.has(index) || revealedCards.includes(index)) return;
+        revealedCards.push(index);
+        if (revealedCards.length === 2) {
+          memoryMoves++;
+          const [first, second] = revealedCards;
+          if (memoryDeck[first] === memoryDeck[second]) {
+            matchedCards.add(first);
+            matchedCards.add(second);
+            revealedCards = [];
+            renderMemoryCards();
+            return;
+          }
+          memoryLocked = true;
+          renderMemoryCards();
+          mismatchTimer = setTimeout(() => {
+            revealedCards = [];
+            memoryLocked = false;
+            renderMemoryCards();
+          }, 750);
+          return;
+        }
+        renderMemoryCards();
+      }
+
+      function resetMemory() {
+        clearTimeout(mismatchTimer);
+        memoryDeck = [...memorySymbols, ...memorySymbols];
+        for (let i = memoryDeck.length - 1; i > 0; i--) {
+          const swapIndex = Math.floor(Math.random() * (i + 1));
+          [memoryDeck[i], memoryDeck[swapIndex]] = [memoryDeck[swapIndex], memoryDeck[i]];
+        }
+        revealedCards = [];
+        matchedCards = new Set();
+        memoryMoves = 0;
+        memoryLocked = false;
+        renderMemoryCards();
+      }
+      document.getElementById('memory-reset').addEventListener('click', resetMemory);
+
+      const guessForm = document.getElementById('guess-form');
+      const guessInput = document.getElementById('guess-input');
+      const guessStatus = document.getElementById('guess-status');
+      const guessCount = document.getElementById('guess-count');
+      const guessSubmit = document.getElementById('guess-submit');
+      let secretNumber = 0;
+      let guessAttempts = 0;
+
+      function resetGuess(shouldFocus = false) {
+        secretNumber = Math.floor(Math.random() * 100) + 1;
+        guessAttempts = 0;
+        guessInput.value = '';
+        guessInput.disabled = false;
+        guessSubmit.disabled = false;
+        guessStatus.textContent = 'Make your first guess.';
+        guessCount.textContent = 'Attempts: 0';
+        if (shouldFocus) guessInput.focus();
+      }
+
+      guessForm.addEventListener('submit', event => {
+        event.preventDefault();
+        const guess = Number(guessInput.value);
+        if (!Number.isInteger(guess) || guess < 1 || guess > 100) {
+          guessStatus.textContent = 'Enter a whole number from 1 to 100.';
+          return;
+        }
+        guessAttempts++;
+        guessCount.textContent = `Attempts: ${guessAttempts}`;
+        if (guess === secretNumber) {
+          guessStatus.textContent = `Correct! You found ${secretNumber} in ${guessAttempts} ${guessAttempts === 1 ? 'guess' : 'guesses'}.`;
+          guessInput.disabled = true;
+          guessSubmit.disabled = true;
+        } else {
+          guessStatus.textContent = guess < secretNumber ? 'Too low. Try a higher number.' : 'Too high. Try a lower number.';
+          guessInput.select();
+        }
+      });
+      document.getElementById('guess-reset').addEventListener('click', () => resetGuess(true));
+
+      resetTicTacToe();
+      resetMemory();
+      resetGuess();
+    })();
+  </script>
+</body>
+</html>

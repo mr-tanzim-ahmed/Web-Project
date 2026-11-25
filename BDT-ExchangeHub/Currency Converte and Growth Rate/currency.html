@@ -101,10 +101,11 @@
   <div class="container py-5">
     <div class="text-center">
       <div class="title">Currency Converter</div>
-      <div class="sub-title">Over 10 years of currency data</div>
+      <div class="sub-title">Live exchange rates with an illustrative chart (not historical data)</div>
     </div>
 
     <!-- Converter UI -->
+    <form id="currencyConverter">
     <div class="row mt-5 align-items-center justify-content-center">
       <!-- From Currency (Fixed to BDT) -->
       <div class="col-md-5 mb-3">
@@ -113,7 +114,7 @@
             <img src="https://flagcdn.com/bd.svg" class="flag" alt="BDT Flag">
             <span class="fw-bold">BDT</span>(taka)
           </div>
-          <input id="fromAmount" type="number" class="form-control text-end" value="1">
+          <input id="fromAmount" type="number" min="0" step="any" class="form-control text-end" value="1" aria-label="Amount in Bangladeshi taka">
         </div>
       </div>
 
@@ -126,18 +127,19 @@
             <button id="toCurrencyBtn" class="btn dropdown-toggle d-flex align-items-center" type="button" data-bs-toggle="dropdown" aria-expanded="false"></button>
             <ul id="toCurrencyMenu" class="dropdown-menu"></ul>
           </div>
-          <input id="toAmount" type="text" class="form-control text-end" placeholder="0.00" readonly>
+          <input id="toAmount" type="text" class="form-control text-end" placeholder="0.00" aria-label="Converted amount" readonly>
         </div>
       </div>
     </div>
 
     <!-- Convert Button -->
     <div class="row justify-content-center mt-3">
-      <div class="col-md-4"><button id="convertBtn" class="btn btn-primary w-100 btn-lg">Convert</button></div>
+      <div class="col-md-4"><button id="convertBtn" type="submit" class="btn btn-primary w-100 btn-lg">Convert</button></div>
     </div>
+    </form>
     
     <!-- Dynamic Rate Display -->
-    <div id="rateDisplay" class="text-center mt-3 small"></div>
+    <div id="rateDisplay" class="text-center mt-3 small" role="status" aria-live="polite"></div>
 
     <!-- Live Exchange Rates Table -->
     <div id="liveRatesSection" class="mt-5">
@@ -182,6 +184,7 @@
     let bdtRates = {};
     let selectedToCurrency = 'USD'; // Default currency
     let currencyChart = null;
+    let ratesFetchedAt = null;
 
     const currencyMeta = {
       'USD': { name: 'US dollar', flag: 'https://flagcdn.com/us.svg' },
@@ -204,13 +207,18 @@
         
         const bdtData = await bdtResponse.json();
         const usdData = await usdResponse.json();
+        if (!bdtData.rates || !usdData.rates) {
+          throw new Error('The exchange-rate service returned an invalid response.');
+        }
         
         bdtRates = bdtData.rates;
+        ratesFetchedAt = new Date();
         populateUIT(usdData.rates);
         
       } catch (error) {
         console.error('Failed to fetch exchange rates:', error);
-        alert('Could not load live exchange rates. Please check your connection and try again.');
+        rateDisplay.textContent = 'Could not load live exchange rates. Check your connection and try again.';
+        rateDisplay.style.display = 'block';
       }
     }
 
@@ -235,7 +243,7 @@
       ratesTableBody.innerHTML = '';
       for (const code of ['EUR', 'GBP', 'INR', 'AUD', 'CAD', 'BDT']) {
         const rate = usdRates[code];
-        if (rate) {
+        if (Number.isFinite(rate) && rate > 0) {
           ratesTableBody.innerHTML += `
             <tr>
               <td data-label="Currency"><strong>${code}</strong></td>
@@ -261,24 +269,41 @@
         item.addEventListener('click', (e) => {
           e.preventDefault();
           updateToButtonUI(e.currentTarget.dataset.code);
+          if (Object.keys(bdtRates).length) handleConversion();
         });
       });
     }
 
     function handleConversion() {
-      const amount = parseFloat(fromAmountInput.value) || 0;
+      const amount = Number(fromAmountInput.value);
       const rate = bdtRates[selectedToCurrency];
-      
-      if (rate) {
-        const result = amount * rate;
-        toAmountInput.value = result.toFixed(2);
-        
-        rateDisplay.innerHTML = `<span style="color:green">●</span> 1 BDT = ${rate.toFixed(6)} ${selectedToCurrency}
-            <span class="text-muted">${new Date().toLocaleString()}</span>`;
-        rateDisplay.style.display = 'block';
 
-        updateChart();
+      if (fromAmountInput.value.trim() === '' || !Number.isFinite(amount) || amount < 0) {
+        toAmountInput.value = '';
+        rateDisplay.textContent = 'Enter a valid, non-negative amount in BDT.';
+        rateDisplay.style.display = 'block';
+        return;
       }
+
+      if (!Number.isFinite(rate) || rate <= 0) {
+        toAmountInput.value = '';
+        rateDisplay.textContent = `No exchange rate is available for ${selectedToCurrency}.`;
+        rateDisplay.style.display = 'block';
+        return;
+      }
+
+      const result = amount * rate;
+      if (!Number.isFinite(result)) {
+        toAmountInput.value = '';
+        rateDisplay.textContent = 'The converted amount is outside the supported range.';
+        rateDisplay.style.display = 'block';
+        return;
+      }
+
+      toAmountInput.value = result.toFixed(2);
+      rateDisplay.textContent = `1 BDT = ${rate.toFixed(6)} ${selectedToCurrency} · Rates fetched ${ratesFetchedAt.toLocaleString()}`;
+      rateDisplay.style.display = 'block';
+      updateChart();
     }
     
     function updateChart() {
@@ -307,8 +332,11 @@
         });
     }
 
-    document.getElementById('convertBtn').addEventListener('click', handleConversion);
+    document.getElementById('currencyConverter').addEventListener('submit', (event) => {
+      event.preventDefault();
+      handleConversion();
+    });
     document.addEventListener('DOMContentLoaded', fetchRates);
   </script>
 </body>
-</html>```
+</html>

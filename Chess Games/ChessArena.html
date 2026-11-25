@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Chess Game — Drag & Play</title>
+<title>Chess — Local Two-Player</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 <style>
   :root { --bg:#101820; --panel:#192631; --panel2:#223442; --text:#edf4f7; --muted:#a9bbc7; --accent:#5eead4; }
@@ -59,7 +59,7 @@
 <body>
 <div class="app">
   <header>
-    <div><h1>♟ Chess Arena</h1><div class="subtitle">Two-player chess · Drag pieces or click a piece, then a square</div></div>
+    <div><h1>♟ Chess</h1><div class="subtitle">Two-player chess · Drag pieces or click a piece, then a square</div></div>
     <div class="pill">LOCAL · 2 PLAYERS</div>
   </header>
   <div class="layout">
@@ -95,7 +95,7 @@
       </section>
     </aside>
   </div>
-  <footer>Chess Arena · Runs in your browser. An internet connection is needed to load the chess rules library.</footer>
+  <footer>Chess · Runs in your browser. An internet connection is needed to load the chess rules library.</footer>
 </div>
 <div class="promo-backdrop" id="promoBackdrop">
   <div class="promo"><h2>Promote your pawn</h2><p class="help">Choose a piece.</p><div class="promo-options" id="promoOptions"></div><button class="btn" id="cancelPromo" style="margin-top:12px">Cancel</button></div>
@@ -106,10 +106,17 @@
   const statusEl = document.getElementById('status');
   const detailEl = document.getElementById('detail');
   const movesEl = document.getElementById('moves');
+  if (typeof Chess !== 'function') {
+    statusEl.textContent = 'Chess rules could not be loaded.';
+    detailEl.textContent = 'Check your internet connection and reload the page.';
+    document.querySelectorAll('.controls button').forEach(button => { button.disabled = true; });
+    return;
+  }
   const glyphs = {
     w:{k:'♔',q:'♕',r:'♖',b:'♗',n:'♘',p:'♙'},
     b:{k:'♚',q:'♛',r:'♜',b:'♝',n:'♞',p:'♟︎'}
   };
+  const pieceNames = {k:'king',q:'queen',r:'rook',b:'bishop',n:'knight',p:'pawn'};
   let game = new Chess();
   let selected = null, legalTargets = [], flipped = false, lastMove = null, pendingPromotion = null;
 
@@ -138,7 +145,8 @@
       const sq=squareName(r,c), piece=b[r][c];
       const el=document.createElement('button');
       el.type='button'; el.className='square '+((r+c)%2===0?'light':'dark');
-      el.dataset.square=sq; el.setAttribute('aria-label',sq);
+      el.dataset.square=sq;
+      el.setAttribute('aria-label',piece ? `${sq}, ${piece.color==='w'?'white':'black'} ${pieceNames[piece.type]}` : sq);
       if(selected===sq) el.classList.add('selected');
       if(lastMove && (lastMove.from===sq||lastMove.to===sq)) el.classList.add('last');
       if(checkKing && piece && piece.type==='k' && piece.color===checkKing) el.classList.add('check');
@@ -150,9 +158,10 @@
         span.dataset.from=sq;
         span.addEventListener('dragstart',e=>{
           if(piece.color!==game.turn()||game.game_over()){e.preventDefault();return;}
-          selected=sq; e.dataTransfer.setData('text/plain',sq);e.dataTransfer.effectAllowed='move';
-          setTimeout(render,0);
+          selected=sq; legalTargets=game.moves({square:sq,verbose:true}).map(m=>m.to);
+          e.dataTransfer.setData('text/plain',sq);e.dataTransfer.effectAllowed='move';
         });
+        span.addEventListener('dragend',render);
         el.appendChild(span);
       }
       if(selected && legalTargets.includes(sq)){

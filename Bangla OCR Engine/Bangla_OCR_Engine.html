@@ -103,8 +103,10 @@
                         <button id="pauseBtn" class="btn btn-warning" disabled>⏸ Pause</button>
                         <button id="stopBtn" class="btn btn-danger" disabled>⏹ Stop</button>
                     </div>
-                    <div id="status" class="status">Select a PDF file to begin</div>
-                    <div id="progressContainer" class="progress-container"><div id="progressBar" class="progress-bar">0%</div></div>
+                    <div id="status" class="status" role="status" aria-live="polite">Select a PDF file to begin</div>
+                    <div id="progressContainer" class="progress-container">
+                        <div id="progressBar" class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">0%</div>
+                    </div>
                 </div>
             </aside>
             <main class="card output-section">
@@ -123,13 +125,14 @@
         class OCRApp {
             constructor() {
                 this.state = this.getInitialState();
+                this.runId = 0;
                 this.initializeElements();
                 this.bindEvents();
                 this.updateUI();
                 this.setDynamicFooterYear();
             }
             
-            getInitialState() { return { worker: null, pdfDoc: null, isPaused: false, shouldStop: false, currentPage: 0, totalPages: 0, results: [], isProcessing: false }; }
+            getInitialState() { return { worker: null, pdfDoc: null, isPaused: false, currentPage: 0, totalPages: 0, results: [], isProcessing: false }; }
             initializeElements() { this.ui = { fileInput: document.getElementById('fileInput'), fileName: document.getElementById('fileName'), startBtn: document.getElementById('startBtn'), pauseBtn: document.getElementById('pauseBtn'), stopBtn: document.getElementById('stopBtn'), downloadBtn: document.getElementById('downloadBtn'), outputText: document.getElementById('outputText'), status: document.getElementById('status'), progressContainer: document.getElementById('progressContainer'), progressBar: document.getElementById('progressBar'), currentYear: document.getElementById('currentYear') }; }
             
             bindEvents() {
@@ -149,7 +152,7 @@
             async handleFileSelect(event) {
                 const file = event.target.files[0]; if (!file) return;
                 await this.stop(true); this.state = this.getInitialState();
-                this.ui.fileName.textContent = file.name; this.ui.status.textContent = '📖 Loading PDF... Please wait.'; this.updateUI();
+                this.ui.fileName.textContent = file.name; this.ui.outputText.value = ''; this.ui.status.textContent = '📖 Loading PDF... Please wait.'; this.updateUI();
                 try {
                     const fileData = new Uint8Array(await file.arrayBuffer()); this.state.pdfDoc = await pdfjsLib.getDocument(fileData).promise;
                     this.state.totalPages = this.state.pdfDoc.numPages; this.state.results = new Array(this.state.totalPages).fill(null);
@@ -158,55 +161,105 @@
             }
             
             async startOrResume() {
-                if (this.ui.startBtn.textContent.includes('Start')) { this.state.currentPage = 0; this.ui.outputText.value = ''; this.state.results.fill(null); }
+                if (this.state.isProcessing || !this.state.pdfDoc) return;
+                if (!this.state.isPaused) { this.state.currentPage = 0; this.ui.outputText.value = ''; this.state.results.fill(null); }
                 this.state.isPaused = false; this.state.isProcessing = true;
-                this.runOCR();
+                this.updateUI();
+                await this.runOCR(this.runId);
             }
             
-            pause() { this.state.isPaused = true; this.state.isProcessing = false; this.updateUI(); }
+            pause() {
+                if (!this.state.isProcessing) return;
+                this.state.isPaused = true;
+                this.updateUI();
+            }
+
             async stop(isSilent = false) {
-                this.state.shouldStop = true; this.state.isProcessing = false;
-                if (this.state.worker) { await this.state.worker.terminate(); this.state.worker = null; }
-                this.state = this.getInitialState();
-                if (!isSilent) this.ui.status.textContent = "🛑 Process stopped by user."; this.updateUI();
+                this.runId++;
+                this.state.isPaused = false;
+                this.state.isProcessing = false;
+                const worker = this.state.worker;
+                this.state.worker = null;
+                if (worker) await worker.terminate();
+                if (!isSilent) this.ui.status.textContent = "🛑 Process stopped. Select Start to process the document again.";
+                this.updateUI();
             }
             
-            async runOCR() {
+            async runOCR(runId) {
                 try {
-                    await this.initializeWorker(); this.updateUI();
+                    const worker = await this.initializeWorker(runId);
+                    if (!worker || runId !== this.runId) return;
+                    this.updateUI();
                     for (let i = this.state.currentPage; i < this.state.totalPages; i++) {
-                        if (this.state.shouldStop || this.state.isPaused) { if (this.state.isPaused) this.state.currentPage = i; break; }
-                        await this.processPage(i);
+                        if (runId !== this.runId) return;
+                        if (this.state.isPaused) {
+                            this.state.currentPage = i;
+                            this.state.isProcessing = false;
+                            this.updateUI();
+                            return;
+                        }
+                        await this.processPage(i, runId);
+                        if (runId !== this.runId) return;
+                        this.state.currentPage = i + 1;
                     }
-                    if (this.state.currentPage === this.state.totalPages && !this.state.shouldStop) {
-                         this.state.isProcessing = false;
-                         this.ui.status.textContent = `🎉 Complete! ${this.state.totalPages} pages processed.`;
-                         await this.state.worker.terminate(); this.state.worker = null; this.updateUI();
+                    if (this.state.currentPage === this.state.totalPages) {
+                        this.state.isPaused = false;
+                        this.state.isProcessing = false;
+                        this.ui.status.textContent = `🎉 Complete! ${this.state.totalPages} pages processed.`;
+                        await worker.terminate();
+                        if (runId === this.runId) {
+                            this.state.worker = null;
+                            this.updateUI();
+                        }
+                    } else if (this.state.isPaused) {
+                        this.state.isProcessing = false;
+                        this.updateUI();
                     }
                 } catch (error) {
-                    this.ui.status.textContent = `❌ OCR Error: ${error.message}`; this.state.isProcessing = false; this.updateUI();
+                    if (runId !== this.runId) return;
+                    console.error('OCR processing failed:', error);
+                    this.ui.status.textContent = `❌ OCR Error: ${error.message}`;
+                    this.state.isProcessing = false;
+                    this.updateUI();
                 }
             }
 
-            async initializeWorker() {
-                if (this.state.worker) return; this.ui.status.textContent = `🚀 Initializing AI OCR Model...`;
+            async initializeWorker(runId) {
+                if (this.state.worker) return this.state.worker;
+                this.ui.status.textContent = `🚀 Initializing AI OCR Model...`;
                 const worker = await Tesseract.createWorker();
-                await worker.loadLanguage('ben'); await worker.initialize('ben');
-                await worker.setParameters({
-                    tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT,
-                });
+                try {
+                    await worker.loadLanguage('ben');
+                    await worker.initialize('ben');
+                    await worker.setParameters({ tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT });
+                    if (runId !== this.runId) {
+                        await worker.terminate();
+                        return null;
+                    }
+                } catch (error) {
+                    await worker.terminate();
+                    throw error;
+                }
                 this.state.worker = worker;
+                return worker;
             }
             
-            async processPage(pageIndex) {
+            async processPage(pageIndex, runId) {
                 this.state.currentPage = pageIndex; this.updateUI();
                 try {
                     const canvas = await this.renderAndProcessCanvas(pageIndex + 1);
+                    if (runId !== this.runId) return;
                     const { data } = await this.state.worker.recognize(canvas);
+                    if (runId !== this.runId) return;
                     const cleanedText = this.postProcessText(data);
                     this.state.results[pageIndex] = cleanedText;
                     this.updateOutput();
-                } catch (error) { this.state.results[pageIndex] = `[Error processing page ${pageIndex + 1}]`; }
+                } catch (error) {
+                    if (runId !== this.runId) return;
+                    console.error(`Failed to process PDF page ${pageIndex + 1}:`, error);
+                    this.state.results[pageIndex] = `[Error processing page ${pageIndex + 1}]`;
+                    this.updateOutput();
+                }
             }
 
             async renderAndProcessCanvas(pageNum) {
@@ -226,7 +279,7 @@
                 const integralImage=new Float32Array(width*height);
                 for (let y=0; y<height; y++){ let rowSum=0; for (let x=0; x<width; x++) { const index=y*width+x; rowSum+=imageData.data[index*4]; integralImage[index]=rowSum+(y>0?integralImage[index-width]:0); } }
                 const s=Math.round(width/16), t=15;
-                for (let y=0; y<height; y++) { for(let x=0; x<width; x++) { const index=y*width+x; const x1=Math.max(0,x-s), y1=Math.max(0,y-s), x2=Math.min(width-1,x+s), y2=Math.min(height-1,y+s); const count=(x2-x1)*(y2-y1); const sum=integralImage[y2*width+x2] - (x1>0?integralImage[y2*width+x1-1]:0) - (y1>0?integralImage[(y1-1)*width+x2]:0) + (x1>0&&y1>0?integralImage[(y1-1)*width+x1-1]:0); const finalColor=imageData.data[index*4]<(sum/count)*(1-t/100)?0:255; imageData.data[index*4]=imageData.data[index*4+1]=imageData.data[index*4+2]=finalColor;}}
+                for (let y=0; y<height; y++) { for(let x=0; x<width; x++) { const index=y*width+x; const x1=Math.max(0,x-s), y1=Math.max(0,y-s), x2=Math.min(width-1,x+s), y2=Math.min(height-1,y+s); const count=(x2-x1+1)*(y2-y1+1); const sum=integralImage[y2*width+x2] - (x1>0?integralImage[y2*width+x1-1]:0) - (y1>0?integralImage[(y1-1)*width+x2]:0) + (x1>0&&y1>0?integralImage[(y1-1)*width+x1-1]:0); const finalColor=imageData.data[index*4]<(sum/count)*(1-t/100)?0:255; imageData.data[index*4]=imageData.data[index*4+1]=imageData.data[index*4+2]=finalColor;}}
                 context.putImageData(imageData,0,0);
             }
             
@@ -250,7 +303,7 @@
             updateUI() {
                 const hasFile=!!this.state.pdfDoc, isProcessing=this.state.isProcessing, isPaused=this.state.isPaused, isComplete=(this.state.currentPage === this.state.totalPages)&&this.state.totalPages>0;
                 this.ui.startBtn.textContent = isPaused ? '▶ Resume' : '▶ Start'; this.ui.startBtn.disabled = !hasFile || isProcessing;
-                this.ui.pauseBtn.disabled = !isProcessing || isPaused; this.ui.stopBtn.disabled = !isProcessing && !isPaused && !isComplete;
+                this.ui.pauseBtn.disabled = !isProcessing || isPaused; this.ui.stopBtn.disabled = !isProcessing && !isPaused;
                 this.ui.downloadBtn.disabled = !this.ui.outputText.value.trim();
                 this.ui.progressContainer.style.display = (isProcessing || isPaused || isComplete || this.state.currentPage > 0) ? 'block' : 'none';
                 if(hasFile) {
@@ -258,8 +311,11 @@
                     this.ui.progressBar.style.width=`${progress}%`; this.ui.progressBar.textContent=`${Math.round(progress)}%`;
                     this.ui.progressBar.classList.toggle('paused', isPaused);
                 }
-                if(isProcessing) this.ui.status.textContent=`🔄 Processing page ${this.state.currentPage + 1} of ${this.state.totalPages}...`;
-                if(isPaused) this.ui.status.textContent = `⏸ Paused at page ${this.state.currentPage + 1}.`;
+                if(isProcessing) this.ui.status.textContent = isPaused
+                    ? `⏸ Pausing after page ${this.state.currentPage + 1}...`
+                    : `🔄 Processing page ${this.state.currentPage + 1} of ${this.state.totalPages}...`;
+                if(isPaused && !isProcessing) this.ui.status.textContent = `⏸ Paused at page ${this.state.currentPage + 1}.`;
+                this.ui.progressBar.setAttribute('aria-valuenow', String(Math.round(parseFloat(this.ui.progressBar.style.width) || 0)));
             }
             
             downloadText() {
